@@ -49,6 +49,13 @@ dsh plugin --profile web add github:ai-shushu/dsh-quota-meter#v0.3.0
 价目表动态可编辑（UI 入口：额度条行尾「价格」），持久化到 `~/.dsh/storages/quota-meter/prices.json`。
 按 **2026-08-17 起 DeepSeek 官方价**（涨幅后），单位 ¥/每 1M tokens：
 
+> ✅ **官方核对（2026-08-18）**：下表全部 6 个价格点与
+> [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)
+> 逐项一致（含高峰时段 9:00–12:00、14:00–18:00 北京时间，空闲 = 高峰半价）。
+> 官方 usage 仅报告 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，
+> 无独立的缓存写入计费字段（硬盘缓存构建成本并入未命中价），
+> 故 `cacheWriteTokens` 对 DeepSeek 恒为 0，`inputWrite` 档仅影响其他厂商。
+
 ### deepseek-v4-flash
 
 | | 缓存命中 | 缓存未命中 | 输出 |
