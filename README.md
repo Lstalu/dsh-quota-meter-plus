@@ -108,6 +108,20 @@ dsh plugin --profile web add ./dsh-quota-meter   # 本地链接安装
    旧价目表自动归一化（缺省 = inputMiss），价格弹层编辑不丢该字段。
    DeepSeek 适配器不报告 `cacheWriteTokens`，该档对 DeepSeek 恒为 0，
    默认配置下记账与官方口径一致。
+3. **屏幕右上角常驻悬浮胶囊 + 账户余额校准（v0.2.2）**：
+   - 胶囊固定于屏幕右上角（`shell.overlay`，z-index 900），常驻显示
+     「账户余额（官方真实值）+ 实测消耗」与「本会话 已花/剩余」两行；
+     会话额度 10s 轮询，账户余额 60s 轮询，可手动 `↻` 立即刷新。
+   - 余额来自官方接口 `GET https://api.deepseek.com/user/balance`
+     （platform.deepseek.com/usage 网站余额的同一数据源，文档化、稳定，
+     无需登录态 cookie 爬网页）。host 端 60s 缓存 + 10s 超时 + 首次
+     拉取自动记录基线；`实测消耗 = 基线 − 当前余额`（账户级口径），
+     供与插件会话记账对照校准。
+   - API Key 经胶囊 `⚙` 弹层保存，落盘
+     `~/.dsh/storages/quota-meter/config.json`（0600，仅本机），
+     或设环境变量 `DSH_DEEPSEEK_API_KEY` / `DEEPSEEK_API_KEY`；
+     密钥只发往 api.deepseek.com，接口绝不回显。`重设基线` 按钮可在
+     充值后重新锚定参考点。
 
 ## 📄 License / 许可
 

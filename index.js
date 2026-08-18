@@ -341,6 +341,86 @@ export function apply(ctx) {
     console.warn('[quota] failed to load prices file: ' + err.message)
   }
 
+  // ── 账户余额校准（官方 GET /user/balance，见 https://api-docs.deepseek.com/api/get-user-balance）──
+  // 用途：定期拉取 DeepSeek 平台真实余额，与插件的会话记账对照校准。
+  // 密钥解析顺序：config 文件（用户经 UI 保存）> 环境变量；只用于向
+  // api.deepseek.com 发送 HTTPS 请求，绝不回传给客户端 UI。
+  const configPath = ctx.dshHomePath('storages', 'quota-meter', 'config.json')
+  let configCache = null
+  function loadConfig() {
+    if (configCache) return configCache
+    configCache = {}
+    try {
+      if (existsSync(configPath)) {
+        const parsed = JSON.parse(readFileSync(configPath, 'utf8'))
+        if (parsed && typeof parsed === 'object') configCache = parsed
+      }
+    } catch (err) {
+      console.warn('[quota] failed to load config: ' + err.message)
+    }
+    return configCache
+  }
+  function saveConfig(next) {
+    configCache = next
+    try {
+      mkdirSync(dirname(configPath), { recursive: true })
+      writeFileSync(configPath, JSON.stringify(next, null, 2), { mode: 0o600 })
+    } catch (err) {
+      console.warn('[quota] failed to save config: ' + err.message)
+    }
+  }
+  function apiKeyOf() {
+    const cfg = loadConfig()
+    if (cfg.apiKey) return String(cfg.apiKey)
+    return process.env.DSH_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY || ''
+  }
+  // 余额缓存 60s：顶栏 60s 轮询 + 手动刷新共用，避免重复打官方接口
+  const balanceCache = { at: 0, data: null }
+  async function fetchBalance() {
+    const now = Date.now()
+    if (balanceCache.data && now - balanceCache.at < 60000) return balanceCache.data
+    const key = apiKeyOf()
+    if (!key) return { ok: false, reason: 'no-key' }
+    let res = null
+    let body = null
+    try {
+      const ctl = new AbortController()
+      const timer = setTimeout(() => ctl.abort(), 10000)
+      res = await fetch('https://api.deepseek.com/user/balance', {
+        headers: { authorization: 'Bearer ' + key, accept: 'application/json' },
+        signal: ctl.signal,
+      })
+      clearTimeout(timer)
+      body = await res.json()
+    } catch (err) {
+      return { ok: false, reason: 'fetch-failed', detail: String((err && err.message) || err) }
+    }
+    if (!res || !res.ok) return { ok: false, reason: 'http-' + (res ? res.status : 'unknown') }
+    const infos = Array.isArray(body && body.balance_infos) ? body.balance_infos : []
+    const info = infos.find((i) => i && i.currency === 'CNY') || infos[0]
+    if (!info) return { ok: false, reason: 'no-balance-info' }
+    const balance = Number(info.total_balance)
+    // 基线：首次成功拉取时以当前余额为参考点；之后 realSpent = 基线 - 当前
+    const cfg = loadConfig()
+    if (cfg.balanceBaseline === undefined || cfg.balanceBaseline === null) {
+      cfg.balanceBaseline = balance
+      saveConfig(cfg)
+    }
+    const baseline = Number(cfg.balanceBaseline) || 0
+    const data = {
+      ok: true,
+      balance: Math.round(balance * 100) / 100,
+      currency: info.currency || 'CNY',
+      isAvailable: !!body.is_available,
+      baseline: Math.round(baseline * 100) / 100,
+      realSpent: Math.round(Math.max(0, baseline - balance) * 100) / 100,
+      updatedAt: now,
+    }
+    balanceCache.data = data
+    balanceCache.at = now
+    return data
+  }
+
   function ledgerOf(sessionId) {
     let entry = ledgers.get(sessionId)
     if (entry === undefined) {
@@ -562,6 +642,30 @@ export function apply(ctx) {
             ? Object.assign({ quota: null, spent: 0, calls: 0, exhausted: false }, base)
             : Object.assign({ quota: ledger.quota, spent: round4(ledger.spent), calls: ledger.calls, exhausted: ledger.exhausted }, base)
           sendJson(res, 200, out)
+          return
+        }
+        // 账户真实余额（官方 /user/balance；未配置 Key 时返回 reason:'no-key'）
+        if (req.method === 'GET' && url.pathname === '/quota/balance') {
+          sendJson(res, 200, await fetchBalance())
+          return
+        }
+        // 插件配置：{ apiKey } 设置/清除密钥；{ resetBaseline: true } 重设余额基线
+        if (req.method === 'POST' && url.pathname === '/quota/config') {
+          const body = await readJsonBody(req)
+          const cfg = Object.assign({}, loadConfig())
+          if (body && body.apiKey !== undefined) {
+            cfg.apiKey = String(body.apiKey).trim()
+            saveConfig(cfg)
+            console.log('[quota] api key ' + (cfg.apiKey ? 'configured' : 'cleared'))
+          } else if (body && body.resetBaseline === true) {
+            cfg.balanceBaseline = undefined
+            saveConfig(cfg)
+            console.log('[quota] balance baseline reset')
+          } else {
+            sendJson(res, 400, { ok: false, reason: 'unknown config op' })
+            return
+          }
+          sendJson(res, 200, { ok: true, hasKey: !!cfg.apiKey, baselineSet: cfg.balanceBaseline !== undefined })
           return
         }
         if (req.method === 'POST') {
