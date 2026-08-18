@@ -26,8 +26,8 @@ const DEFAULT_PRICES = {
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 1.5, inputHit: 0.05, output: 4.5 },
-        peak: { inputMiss: 3.0, inputHit: 0.10, output: 9.0 },
+        default: { inputMiss: 1.5, inputHit: 0.05, output: 4.5, inputWrite: 1.5 },
+        peak: { inputMiss: 3.0, inputHit: 0.10, output: 9.0, inputWrite: 3.0 },
       },
     },
     'deepseek-v4-pro': {
@@ -35,8 +35,8 @@ const DEFAULT_PRICES = {
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 4.5, inputHit: 0.15, output: 13.5 },
-        peak: { inputMiss: 9.0, inputHit: 0.30, output: 27.0 },
+        default: { inputMiss: 4.5, inputHit: 0.15, output: 13.5, inputWrite: 4.5 },
+        peak: { inputMiss: 9.0, inputHit: 0.30, output: 27.0, inputWrite: 9.0 },
       },
     },
   },
@@ -48,6 +48,20 @@ export const inject = ['webServer', 'dshHomePath', 'apiProxy']
 function sendJson(res, status, obj) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(obj))
+}
+
+// 同源防护：/quota 是本地写接口（改额度 / 改价目表），浏览器里打开的
+// 任意外部网页都能向 127.0.0.1 发请求，必须拒绝跨源来源。
+// 规则：带 Origin 的请求要求 Origin 的 host 与请求 Host 头完全一致
+// （dsh web 页面同源 fetch 天然满足）；无 Origin（curl、本机进程）放行。
+function isSameOrigin(req) {
+  const origin = req.headers['origin']
+  if (!origin || origin === 'null') return true
+  try {
+    return new URL(origin).host === (req.headers['host'] || '')
+  } catch {
+    return false
+  }
 }
 
 function readJsonBody(req) {
@@ -85,7 +99,10 @@ function isPeakTime(tz, peakWindows, date) {
   return false
 }
 
-// 校验一组三档价格
+// 校验一组价格（三档必填；inputWrite 可选，缺省 = inputMiss）
+// inputWrite = 写缓存 token 单价（cacheWriteTokens 档）。写缓存是真实
+// 成本（如 Anthropic cache_creation 按 1.25× 输入价计），缺省按未命中价
+// 保守计，避免低估；DeepSeek 不报告 cacheWriteTokens，该档恒为 0。
 function parseTriple(obj) {
   if (!obj || typeof obj !== 'object') return { ok: false, reason: 'prices must be an object' }
   const inputMiss = Number(obj.inputMiss)
@@ -94,7 +111,11 @@ function parseTriple(obj) {
   if (![inputMiss, inputHit, output].every(Number.isFinite) || inputMiss < 0 || inputHit < 0 || output < 0) {
     return { ok: false, reason: 'prices must be non-negative numbers' }
   }
-  return { ok: true, value: { inputMiss, inputHit, output } }
+  const inputWrite = obj.inputWrite === undefined ? inputMiss : Number(obj.inputWrite)
+  if (!Number.isFinite(inputWrite) || inputWrite < 0) {
+    return { ok: false, reason: 'inputWrite must be a non-negative number' }
+  }
+  return { ok: true, value: { inputMiss, inputHit, output, inputWrite } }
 }
 
 // 校验并规整价目表（支持 v1 旧结构与 v2 模式化结构）；失败返回 { ok:false, reason }
@@ -347,14 +368,17 @@ export function apply(ctx) {
   }
 
   // TokenUsage 字段互斥（dsh 官方语义）：inputTokens=未缓存输入；
-  // cacheRead+cacheWrite=缓存输入；outputTokens=输出
+  // cacheRead+cacheWrite=缓存输入；outputTokens=输出。计费口径：
+  // cacheRead 按命中价、cacheWrite 按 inputWrite 档（缺省=未命中价，
+  // 见 parseTriple），输出单独计价。
   function costOf(model, usage) {
     const entry = prices.models[model] || prices.models[prices.fallback]
     const t = entryPrices(entry)
     const miss = usage.inputTokens || 0
-    const hit = (usage.cacheReadTokens || 0) + (usage.cacheWriteTokens || 0)
+    const read = usage.cacheReadTokens || 0
+    const write = usage.cacheWriteTokens || 0
     const out = usage.outputTokens || 0
-    return (miss * t.inputMiss + hit * t.inputHit + out * t.output) / 1000000
+    return (miss * t.inputMiss + read * t.inputHit + write * t.inputWrite + out * t.output) / 1000000
   }
 
   function round4(v) { return Math.round(v * 10000) / 10000 }
@@ -440,6 +464,11 @@ export function apply(ctx) {
     path: '/quota',
     handler: async (req, res) => {
       try {
+        // 同源防护（见 isSameOrigin）：外部网页跨源调用 /quota 直接 403
+        if (!isSameOrigin(req)) {
+          sendJson(res, 403, { ok: false, reason: 'forbidden: cross-origin request' })
+          return
+        }
         const url = new URL(req.url || '/', 'http://localhost')
         const sessionId = url.searchParams.get('sessionId') || ''
 

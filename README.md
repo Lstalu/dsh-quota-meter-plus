@@ -86,6 +86,22 @@ dsh plugin --profile web add ./dsh-quota-meter   # 本地链接安装
 
 改 `index.js`（host）/ `lib/client.js`（client）→ client 刷新即生效，host 重启生效。
 
+## 🔧 本地补丁（相对上游 d9941af）
+
+本 checkout 为本地维护版，在官方基础上打了两处补丁（均可提交上游）：
+
+1. **同源防护（安全）**：`/quota/*` 是本地写接口（改额度 / 改价目表），
+   浏览器里任意外部网页都能向 `127.0.0.1` 发跨源请求。host 端新增
+   `isSameOrigin` 校验——带 `Origin` 的请求要求其 host 与请求 `Host` 头
+   完全一致，跨源一律 403；无 Origin 的客户端（curl、本机进程）放行。
+2. **`inputWrite` 计费档（口径修正）**：`cacheWriteTokens` 不再并入
+   "缓存命中"低价档，改用独立的 `inputWrite` 单价（缺省 = 未命中价，
+   保守不低估；Anthropic 等写缓存按 1.25× 输入价计的厂商可自行调高）。
+   三档价格组扩展为四档 `{ inputMiss, inputHit, output, inputWrite }`，
+   旧价目表自动归一化（缺省 = inputMiss），价格弹层编辑不丢该字段。
+   DeepSeek 适配器不报告 `cacheWriteTokens`，该档对 DeepSeek 恒为 0，
+   默认配置下记账与官方口径一致。
+
 ## 📄 License / 许可
 
 MIT
