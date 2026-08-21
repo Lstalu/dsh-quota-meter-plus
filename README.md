@@ -14,6 +14,10 @@
 |---|---|
 | ![Unpriced model](./assets/unpriced-model.png) | ![Quota exhausted](./assets/quota-exhausted.png) |
 
+| 余额校准胶囊（v0.3.0） | |
+|---|---|
+| ![Balance capsule](./assets/balance-capsule.png) | 屏幕右上角常驻悬浮：账户余额（官方真实值）+ 实测消耗 + 本会话 已花/剩余，可手动 `↻` 刷新 |
+
 ## ✨ Features / 特性
 
 - **Real-token billing** — 按 dsh `llm/stream` 的真实 usage 记账，缓存命中/未命中/输出分档计费
