@@ -28,13 +28,13 @@
 Any machine with dsh CLI — 任意装有 dsh 的机器，一条命令：
 
 ```bash
-dsh plugin --profile web add github:ai-shushu/dsh-quota-meter
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus
 ```
 
 Locked version — 锁版本安装（推荐正式环境）：
 
 ```bash
-dsh plugin --profile web add github:ai-shushu/dsh-quota-meter#v0.3.0
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.3.0
 ```
 
 - **Client**（进度条/弹层 UI）→ 刷新浏览器即生效
@@ -87,15 +87,15 @@ dsh plugin --profile web add github:ai-shushu/dsh-quota-meter#v0.3.0
 ## 🛠 Develop / 开发
 
 ```bash
-git clone git@github.com:ai-shushu/dsh-quota-meter.git
-dsh plugin --profile web add ./dsh-quota-meter   # 本地链接安装
+git clone git@github.com:Lstalu/dsh-quota-meter-plus.git
+dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
 ```
 
 改 `index.js`（host）/ `lib/client.js`（client）→ client 刷新即生效，host 重启生效。
 
-## 🔧 本地补丁（相对上游 d9941af）
+## 🔧 增强补丁（相对上游 d9941af）
 
-本 checkout 为本地维护版，在官方基础上打了两处补丁（均可提交上游）：
+本仓库为增强维护版，基于官方 d9941af 基线，在官方基础上打了三处补丁（均可提交上游）：
 
 1. **同源防护（安全）**：`/quota/*` 是本地写接口（改额度 / 改价目表），
    浏览器里任意外部网页都能向 `127.0.0.1` 发跨源请求。host 端新增
@@ -108,7 +108,7 @@ dsh plugin --profile web add ./dsh-quota-meter   # 本地链接安装
    旧价目表自动归一化（缺省 = inputMiss），价格弹层编辑不丢该字段。
    DeepSeek 适配器不报告 `cacheWriteTokens`，该档对 DeepSeek 恒为 0，
    默认配置下记账与官方口径一致。
-3. **屏幕右上角常驻悬浮胶囊 + 账户余额校准（v0.2.2）**：
+3. **屏幕右上角常驻悬浮胶囊 + 账户余额校准（v0.3.0）**：
    - 胶囊固定于屏幕右上角（`shell.overlay`，z-index 900），常驻显示
      「账户余额（官方真实值）+ 实测消耗」与「本会话 已花/剩余」两行；
      会话额度 10s 轮询，账户余额 60s 轮询，可手动 `↻` 立即刷新。
