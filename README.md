@@ -24,6 +24,7 @@
 - **Live progress bar** — 输入框上方 2px 细条实时显示剩余额度（右对齐倒退），请求发起时左侧"燃烧"亮点脉动，扣费瞬间弹出 `-¥` 金额徽标
 - **Budget blocking** — 额度耗尽自动拦截新的模型调用（`agent/pre-step`），并弹出提示
 - **Configurable pricing** — 价目表 UI 可编辑、按模型持久化；支持峰谷（time-of-day）定价，每个模型可自定义时区与高峰时段
+- **Weekend off-peak** — 官方新规（2026-08-23 起）周六/周日全天按空闲价计费，自动识别并切换档位
 - **Per-session scope** — 记账按会话独立；**子代理消耗自动并入父会话额度**（沿代理链上溯到根父），额度条显示真实总花费；辅助调用（标题生成/上下文压缩）同样计费
 - **Persistent ledger** — 额度与已花金额跟随会话持久化（`~/.dsh/storages/quota-meter/sessions/`），重启 dsh 不丢；会话关闭时自动清理，与对话记录生命周期一致
 
@@ -38,7 +39,7 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus
 Locked version — 锁版本安装（推荐正式环境）：
 
 ```bash
-dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.3.0
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.0
 ```
 
 - **Client**（进度条/弹层 UI）→ 刷新浏览器即生效
@@ -48,32 +49,41 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.3.0
 > Local development — 本地开发用 checkout 链接（改动即时反映）：
 > `dsh plugin --profile web add /path/to/quota-meter-plugin`
 
+> **升级注意（已有安装者）**：默认价目表随版本更新，但本机 `prices.json`（如已存在）会覆盖默认值。
+> 升级到含新价格的版本后，需在价格弹层点「重置」或删除 `~/.dsh/storages/quota-meter/prices.json`
+> 才会用到最新默认价（含新模型 `deepseek-v4-flash-vision-exp`）。
+
 ## 💰 Pricing / 计价
 
 价目表动态可编辑（UI 入口：额度条行尾「价格」），持久化到 `~/.dsh/storages/quota-meter/prices.json`。
-按 **2026-08-17 起 DeepSeek 官方价**（涨幅后），单位 ¥/每 1M tokens：
+单位 ¥/每 1M tokens。计价基准：**官方 2026-08-21 页面为美元价**，此处按当日
+人民币兑美元中间价 **6.78** 折算（off-peak = 美元价 × 6.78 取 2 位，peak = off-peak × 2）。
+汇率与价格均可在 UI 修改。
 
-> ✅ **官方核对（2026-08-18）**：下表全部 6 个价格点与
+> ✅ **官方核对（2026-08-21）**：价格点与
 > [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)
-> 逐项一致（含高峰时段 9:00–12:00、14:00–18:00 北京时间，空闲 = 高峰半价）。
+> 一致（flash/vision 未命中 $0.22、输出 $0.66、命中 $0.007；pro 约 3×）。
+> 高峰时段为 UTC 01:00–04:00、06:00–10:00 = 北京 09:00–12:00、14:00–18:00，
+> 空闲 = 高峰半价；**新规（2026-08-23 起）周六、周日全天按空闲价计费**。
 > 官方 usage 仅报告 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，
 > 无独立的缓存写入计费字段（硬盘缓存构建成本并入未命中价），
 > 故 `cacheWriteTokens` 对 DeepSeek 恒为 0，`inputWrite` 档仅影响其他厂商。
 
-### deepseek-v4-flash
+### deepseek-v4-flash · deepseek-v4-flash-vision-exp
 
 | | 缓存命中 | 缓存未命中 | 输出 |
 |---|---|---|---|
-| 空闲时段 | ¥0.05 | ¥1.5 | ¥4.5 |
-| 高峰时段 | ¥0.10 | ¥3.0 | ¥9.0 |
+| 空闲时段（含周末） | ¥0.05 | ¥1.49 | ¥4.47 |
+| 高峰时段 | ¥0.10 | ¥2.98 | ¥8.94 |
 
 ### deepseek-v4-pro
 
 | | 缓存命中 | 缓存未命中 | 输出 |
 |---|---|---|---|
-| 空闲时段 | ¥0.15 | ¥4.5 | ¥13.5 |
-| 高峰时段 | ¥0.30 | ¥9.0 | ¥27.0 |
+| 空闲时段（含周末） | ¥0.15 | ¥4.47 | ¥13.42 |
+| 高峰时段 | ¥0.30 | ¥8.94 | ¥26.84 |
 
+- **Weekend off-peak / 周末全天空闲**：周六、周日（北京时间）全天按空闲价计费（官方 2026-08-23 起执行）
 - **Peak hours / 高峰时段**：北京时间 9:00–12:00、14:00–18:00（每个峰谷模型可自定义时区与区间）
 - 未知模型回退到 `fallback` 模型价
 - 计价模型：`计费输入 = 未缓存输入 + 缓存命中输入`，输出单独计价

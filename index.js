@@ -11,8 +11,15 @@ import { dirname, join } from 'node:path'
 
 const UNIT = '¥'
 
-// 默认价目表（人民币，每 1M tokens；DeepSeek 2026-08-17 起峰谷定价，
-// default=空闲时段、peak=高峰时段；可随时在 UI 弹层修改并持久化）
+// 默认价目表（人民币，每 1M tokens；DeepSeek 峰谷定价，default=空闲时段、
+// peak=高峰时段；可随时在 UI 弹层修改并持久化）。
+//
+// 计价基准：官方 2026-08-21 页面为美元价（flash/vision 未命中 $0.22、输出 $0.66、
+// 命中 $0.007；pro 约 3×：未命中 $0.66、输出 $1.98、命中 $0.022），
+// 此处按 2026-08-21 人民币兑美元中间价 6.78 折算：off-peak = 美元价 × 6.78 取 2 位，
+// peak = off-peak × 2（官方 peak 恒为 off-peak 的 2 倍）。汇率与价格均可在 UI 修改。
+// 峰谷窗口：官方（UTC 01:00–04:00、06:00–10:00）= 北京 09:00–12:00、14:00–18:00，
+// 与 tod.peak 一致；新规（2026-08-23 北京时间 00:00 起）周六、周日全天按空闲价计费。
 const DEFAULT_PRICES = {
   version: 2,
   unit: UNIT,
@@ -26,8 +33,17 @@ const DEFAULT_PRICES = {
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 1.5, inputHit: 0.05, output: 4.5, inputWrite: 1.5 },
-        peak: { inputMiss: 3.0, inputHit: 0.10, output: 9.0, inputWrite: 3.0 },
+        default: { inputMiss: 1.49, inputHit: 0.05, output: 4.47, inputWrite: 1.49 },
+        peak: { inputMiss: 2.98, inputHit: 0.10, output: 8.94, inputWrite: 2.98 },
+      },
+    },
+    'deepseek-v4-flash-vision-exp': {
+      provider: 'deepseek',
+      pricing: 'per-token-tod',
+      tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
+      prices: {
+        default: { inputMiss: 1.49, inputHit: 0.05, output: 4.47, inputWrite: 1.49 },
+        peak: { inputMiss: 2.98, inputHit: 0.10, output: 8.94, inputWrite: 2.98 },
       },
     },
     'deepseek-v4-pro': {
@@ -35,8 +51,8 @@ const DEFAULT_PRICES = {
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 4.5, inputHit: 0.15, output: 13.5, inputWrite: 4.5 },
-        peak: { inputMiss: 9.0, inputHit: 0.30, output: 27.0, inputWrite: 9.0 },
+        default: { inputMiss: 4.47, inputHit: 0.15, output: 13.42, inputWrite: 4.47 },
+        peak: { inputMiss: 8.94, inputHit: 0.30, output: 26.84, inputWrite: 8.94 },
       },
     },
   },
@@ -91,8 +107,22 @@ function hourInTz(tz, date) {
   }
 }
 
+// 按模型 tod.tz（默认 Asia/Shanghai）判断是否为周末（周六/周日）。
+// 官方新规（2026-08-23 北京时间 00:00 起）：周六、周日全天按空闲价计费。
+function isWeekendInTz(tz, date) {
+  try {
+    const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz || "Asia/Shanghai", weekday: "short" }).format(date || new Date())
+    return wd === 'Sat' || wd === 'Sun'
+  } catch {
+    return false
+  }
+}
+
 function isPeakTime(tz, peakWindows, date) {
-  const h = hourInTz(tz || "Asia/Shanghai", date)
+  const d = date || new Date()
+  // 周末规则：模型 tz 下的周六/周日恒为 off-peak（不参与高峰窗口判断）
+  if (isWeekendInTz(tz || "Asia/Shanghai", d)) return false
+  const h = hourInTz(tz || "Asia/Shanghai", d)
   for (const w of peakWindows || []) {
     if (h >= w[0] && h < w[1]) return true
   }
