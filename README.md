@@ -39,7 +39,7 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus
 Locked version — 锁版本安装（推荐正式环境）：
 
 ```bash
-dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.1
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.2
 ```
 
 - **Client**（进度条/弹层 UI）→ 刷新浏览器即生效
@@ -137,9 +137,10 @@ dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
      密钥只发往 api.deepseek.com，接口绝不回显。`重设基线` 按钮可在
      充值后重新锚定参考点。
 
-4. **留空保存 Key 不再清除（v0.4.1，防误清空）**：`/quota/config` 收到
-   空的 `apiKey` 时视为"保留现有 Key"，不再覆盖、不再清除——避免在胶囊
-   `⚙` 弹层误点「保存」把密钥清掉。只有填入非空 Key 才会更新。
+4. **留空保存 Key 不再清除 + 独立「清除密钥」按钮（v0.4.2，防误清空）**：
+   `/quota/config` 收到空的 `apiKey` 时视为"保留现有 Key"，不再覆盖、不再
+   清除——避免在胶囊 `⚙` 弹层误点「保存」把密钥清掉。只有填入非空 Key 才会
+   更新；如需清除，用弹层新增的「清除密钥」按钮（带确认）显式清空。
 
 ## 📄 License / 许可
 

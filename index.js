@@ -679,7 +679,8 @@ export function apply(ctx) {
           sendJson(res, 200, await fetchBalance())
           return
         }
-        // 插件配置：{ apiKey } 设置/清除密钥；{ resetBaseline: true } 重设余额基线
+        // 插件配置：{ apiKey } 设置密钥；{ clearKey: true } 显式清除密钥；
+        // { resetBaseline: true } 重设余额基线
         if (req.method === 'POST' && url.pathname === '/quota/config') {
           const body = await readJsonBody(req)
           const cfg = Object.assign({}, loadConfig())
@@ -693,6 +694,11 @@ export function apply(ctx) {
             } else {
               console.log('[quota] api key save skipped (empty; existing key kept)')
             }
+          } else if (body && body.clearKey === true) {
+            // 独立显式清除（前端带确认后触发），补回被"留空不覆盖"拿掉的清空能力
+            cfg.apiKey = ''
+            saveConfig(cfg)
+            console.log('[quota] api key cleared')
           } else if (body && body.resetBaseline === true) {
             cfg.balanceBaseline = undefined
             saveConfig(cfg)
