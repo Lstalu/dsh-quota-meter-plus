@@ -684,9 +684,15 @@ export function apply(ctx) {
           const body = await readJsonBody(req)
           const cfg = Object.assign({}, loadConfig())
           if (body && body.apiKey !== undefined) {
-            cfg.apiKey = String(body.apiKey).trim()
-            saveConfig(cfg)
-            console.log('[quota] api key ' + (cfg.apiKey ? 'configured' : 'cleared'))
+            // 留空保存视为"保留现有 Key"，不再清除——避免在 ⚙ 弹层误点保存清空密钥。
+            const key = String(body.apiKey).trim()
+            if (key) {
+              cfg.apiKey = key
+              saveConfig(cfg)
+              console.log('[quota] api key configured')
+            } else {
+              console.log('[quota] api key save skipped (empty; existing key kept)')
+            }
           } else if (body && body.resetBaseline === true) {
             cfg.balanceBaseline = undefined
             saveConfig(cfg)

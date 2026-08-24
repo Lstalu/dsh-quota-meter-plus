@@ -1,6 +1,6 @@
 {
   "name": "quota-meter",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "会话额度监控（dsh bundle 增强版）：按 DeepSeek 官方价格记账、额度耗尽拦截 + 输入框上方进度条 UI（同源防护 + inputWrite 计费档 + 屏幕右上角余额校准悬浮窗）",
   "type": "module",
   "main": "index.js",

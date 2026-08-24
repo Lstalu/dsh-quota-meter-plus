@@ -39,7 +39,7 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus
 Locked version — 锁版本安装（推荐正式环境）：
 
 ```bash
-dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.0
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.1
 ```
 
 - **Client**（进度条/弹层 UI）→ 刷新浏览器即生效
@@ -109,7 +109,7 @@ dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
 
 ## 🔧 增强补丁（相对上游 d9941af）
 
-本仓库为增强维护版，基于官方 d9941af 基线，在官方基础上打了三处补丁（均可提交上游）：
+本仓库为增强维护版，基于官方 d9941af 基线，在官方基础上打了四处补丁（均可提交上游）：
 
 1. **同源防护（安全）**：`/quota/*` 是本地写接口（改额度 / 改价目表），
    浏览器里任意外部网页都能向 `127.0.0.1` 发跨源请求。host 端新增
@@ -136,6 +136,10 @@ dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
      或设环境变量 `DSH_DEEPSEEK_API_KEY` / `DEEPSEEK_API_KEY`；
      密钥只发往 api.deepseek.com，接口绝不回显。`重设基线` 按钮可在
      充值后重新锚定参考点。
+
+4. **留空保存 Key 不再清除（v0.4.1，防误清空）**：`/quota/config` 收到
+   空的 `apiKey` 时视为"保留现有 Key"，不再覆盖、不再清除——避免在胶囊
+   `⚙` 弹层误点「保存」把密钥清掉。只有填入非空 Key 才会更新。
 
 ## 📄 License / 许可
 
