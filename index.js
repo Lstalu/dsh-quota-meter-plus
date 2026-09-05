@@ -59,7 +59,10 @@ const DEFAULT_PRICES = {
 }
 
 export const name = 'quota-meter'
-export const inject = ['webServer', 'dshHomePath', 'apiProxy']
+// apiProxy 不再静态注入：dsh 0.1.2（rc.1）已移除该服务，静态声明会让整个
+// 插件树阻塞启动（pending: waiting for service: apiProxy）。模型查询改为
+// apply() 内按运行时可用服务动态路由（见 querySessionModels）。
+export const inject = ['webServer', 'dshHomePath']
 
 function sendJson(res, status, obj) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -227,13 +230,51 @@ export function apply(ctx) {
   const parentMap = new Map()
   // 进行中的模型调用数（llm/stream 开始 +1 / 结束 -1），供客户端显示"请求中"动效
   let inflightCount = 0
-  // 最近一次主调用使用的模型（apiProxy 查询当前会话模型的兜底）
+  // 最近一次主调用使用的模型（查询当前会话模型失败时的兜底）
   let lastModel = null
   // Plan 调用信号：套餐模型调用不计费，客户端显示 "Plan" 徽标代替金额
   let planTick = 0
   let lastPlanModel = null
   // 当前会话选中模型查询缓存（按 sessionId + TTL 1.5s，避免 1s 轮询每次都打 RPC）
   const modelQueryCache = { at: 0, sessionId: null, value: null }
+
+  // ── 跨版本模型查询层 ─────────────────────────────────────────────────
+  // dsh 0.1.1：apiProxy.sessions.models({ payload: { sessionId } })
+  //           → { result: { ok, value: { current: { model }, groups } } }
+  // dsh 0.1.2（rc.1）：apiProxy 已整体移除，等价信息改由
+  //           sessionController.modelCatalog()（模型目录，形状兼容：groups[]
+  //           含 { id, name, models[].id }）与 sessionProjections 的
+  //           modelSelection 投影（state.pending ?? state.lastUsed = 当前选中，
+  //           与官方模型选择器 UI 的 projected.next 同源）提供。
+  // 运行时按可用服务自动路由：优先现代路径，回退 apiProxy，两者皆缺则降级。
+  function serviceOf(name) {
+    try { return ctx.get(name) ?? null } catch { return null }
+  }
+
+  async function querySessionModels(sessionId) {
+    const sessionController = serviceOf('sessionController')
+    const agents = serviceOf('agents')
+    const sessionProjections = serviceOf('sessionProjections')
+    if (sessionController && agents && sessionProjections) {
+      let current = null
+      try {
+        const agent = agents.get(sessionId)
+        const state = agent ? sessionProjections.stateOf(agent.session, 'modelSelection') : undefined
+        const selection = state ? (state.pending ?? state.lastUsed) : null
+        current = selection && selection.model ? { model: selection.model } : null
+      } catch { current = null }
+      let groups = []
+      try { groups = (await sessionController.modelCatalog()).groups || [] } catch { groups = [] }
+      return { current, groups }
+    }
+    const apiProxy = serviceOf('apiProxy')
+    if (apiProxy) {
+      const r = await apiProxy.sessions.models({ rpcId: 'quota-' + Date.now(), payload: { sessionId } })
+      const res = r && r.result
+      return (res && res.ok && res.value) ? res.value : { current: null, groups: [] }
+    }
+    return { current: null, groups: [] }
+  }
 
   // 查询会话当前选中的模型（composer 里选的，实时反映模型切换）；
   // 查询失败（子代理/冷会话/服务不可用）时回退最近一次主调用模型
@@ -242,9 +283,8 @@ export function apply(ctx) {
     if (modelQueryCache.sessionId === sessionId && now - modelQueryCache.at < 1500) return modelQueryCache.value
     let value = null
     try {
-      const r = await ctx.apiProxy.sessions.models({ rpcId: 'quota-model-' + now, payload: { sessionId } })
-      const res = r && r.result
-      value = (res && res.ok && res.value && res.value.current && res.value.current.model) || null
+      const models = await querySessionModels(sessionId)
+      value = (models.current && models.current.model) || null
     } catch { /* 查询失败，走兜底 */ }
     if (!value) value = lastModel
     modelQueryCache.sessionId = sessionId
@@ -261,9 +301,8 @@ export function apply(ctx) {
     if (catalogCache.groups && now - catalogCache.at < 60000) return catalogCache.groups
     let groups = []
     try {
-      const r = await ctx.apiProxy.sessions.models({ rpcId: 'quota-catalog-' + now, payload: { sessionId } })
-      const res = r && r.result
-      groups = (res && res.ok && res.value && res.value.groups) || []
+      const models = await querySessionModels(sessionId)
+      groups = models.groups || []
     } catch { groups = [] }
     catalogCache.groups = groups
     catalogCache.at = now
