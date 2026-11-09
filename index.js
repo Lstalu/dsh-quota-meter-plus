@@ -14,12 +14,16 @@ const UNIT = '¥'
 // 默认价目表（人民币，每 1M tokens；DeepSeek 峰谷定价，default=空闲时段、
 // peak=高峰时段；可随时在 UI 弹层修改并持久化）。
 //
-// 计价基准：官方 2026-08-21 页面为美元价（flash/vision 未命中 $0.22、输出 $0.66、
-// 命中 $0.007；pro 约 3×：未命中 $0.66、输出 $1.98、命中 $0.022），
-// 此处按 2026-08-21 人民币兑美元中间价 6.78 折算：off-peak = 美元价 × 6.78 取 2 位，
-// peak = off-peak × 2（官方 peak 恒为 off-peak 的 2 倍）。汇率与价格均可在 UI 修改。
-// 峰谷窗口：官方（UTC 01:00–04:00、06:00–10:00）= 北京 09:00–12:00、14:00–18:00，
-// 与 tod.peak 一致；新规（2026-08-23 北京时间 00:00 起）周六、周日全天按空闲价计费。
+// 计价基准：官方 2026-09-11 中文页直接给人民币价（元/百万 tokens），无汇率折算。
+// flash 系列：命中 0.02 / 未命中 1 / 输出 4；pro：命中 0.15 / 未命中 4.5 / 输出 13.5。
+// peak = 空闲价 × 2（官方恒为 2 倍，两档数字均直接取自官方页面）。
+// 旧版按 2026-08-21 美元价 × 6.78 折算（flash 1.49/0.05/4.47、pro 4.47/0.15/13.42）
+// 已废弃：那是国际站美元口径，与中文站人民币价不是同一套数字。
+// 峰谷窗口：官方 = 北京 09:00–12:00、14:00–18:00（周一至周五）；周六、周日全天空闲价。
+//
+// 模型名迁移（2026-09-10 生效）：deepseek-v4.1-flash-expires-on-0910 已失效，
+// 正式名为 deepseek-flash；旧名 deepseek-v4-flash / -vision-exp 仍可调用，
+// 但请求由 V4.1-Flash 提供服务并按 Flash 价计费，故三条必须同价。
 const DEFAULT_PRICES = {
   version: 2,
   unit: UNIT,
@@ -28,13 +32,22 @@ const DEFAULT_PRICES = {
   ignored: [],
   plans: [],
   models: {
+    'deepseek-flash': {
+      provider: 'deepseek',
+      pricing: 'per-token-tod',
+      tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
+      prices: {
+        default: { inputMiss: 1, inputHit: 0.02, output: 4, inputWrite: 1 },
+        peak: { inputMiss: 2, inputHit: 0.04, output: 8, inputWrite: 2 },
+      },
+    },
     'deepseek-v4-flash': {
       provider: 'deepseek',
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 1.49, inputHit: 0.05, output: 4.47, inputWrite: 1.49 },
-        peak: { inputMiss: 2.98, inputHit: 0.10, output: 8.94, inputWrite: 2.98 },
+        default: { inputMiss: 1, inputHit: 0.02, output: 4, inputWrite: 1 },
+        peak: { inputMiss: 2, inputHit: 0.04, output: 8, inputWrite: 2 },
       },
     },
     'deepseek-v4-flash-vision-exp': {
@@ -42,8 +55,8 @@ const DEFAULT_PRICES = {
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 1.49, inputHit: 0.05, output: 4.47, inputWrite: 1.49 },
-        peak: { inputMiss: 2.98, inputHit: 0.10, output: 8.94, inputWrite: 2.98 },
+        default: { inputMiss: 1, inputHit: 0.02, output: 4, inputWrite: 1 },
+        peak: { inputMiss: 2, inputHit: 0.04, output: 8, inputWrite: 2 },
       },
     },
     'deepseek-v4-pro': {
@@ -51,15 +64,21 @@ const DEFAULT_PRICES = {
       pricing: 'per-token-tod',
       tod: { tz: 'Asia/Shanghai', peak: [[9, 12], [14, 18]] },
       prices: {
-        default: { inputMiss: 4.47, inputHit: 0.15, output: 13.42, inputWrite: 4.47 },
-        peak: { inputMiss: 8.94, inputHit: 0.30, output: 26.84, inputWrite: 8.94 },
+        default: { inputMiss: 4.5, inputHit: 0.15, output: 13.5, inputWrite: 4.5 },
+        peak: { inputMiss: 9, inputHit: 0.3, output: 27, inputWrite: 9 },
       },
     },
   },
 }
 
 export const name = 'quota-meter'
-export const inject = ['webServer', 'dshHomePath', 'apiProxy']
+// 0.1.6-alpha.1：apiProxy 服务随 @deepseek-ai/dsh-host-apiproxy 一起被移除。
+// 模型目录改为直接消费两个宿主本地服务（与 dsh-api-session-controller 的
+// buildModelCatalog 所用的是同一对）：
+//   ctx.llm                —— listProviders / listModels / resolveModelInfo
+//   ctx.agentDefaultModel  —— currentSelection()
+// 见 incidents/2026-09-16-upgrade-016-preflight/ADDENDUM-quota-meter-api-migration.md
+export const inject = ['webServer', 'dshHomePath', 'llm', 'agentDefaultModel']
 
 function sendJson(res, status, obj) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -227,24 +246,65 @@ export function apply(ctx) {
   const parentMap = new Map()
   // 进行中的模型调用数（llm/stream 开始 +1 / 结束 -1），供客户端显示"请求中"动效
   let inflightCount = 0
-  // 最近一次主调用使用的模型（apiProxy 查询当前会话模型的兜底）
+  // 最近一次主调用使用的模型（catalog 查询当前会话模型的兜底）
   let lastModel = null
   // Plan 调用信号：套餐模型调用不计费，客户端显示 "Plan" 徽标代替金额
   let planTick = 0
   let lastPlanModel = null
-  // 当前会话选中模型查询缓存（按 sessionId + TTL 1.5s，避免 1s 轮询每次都打 RPC）
+  // 当前会话模型查询缓存（按 sessionId + TTL 1.5s，避免 1s 轮询每次都重建目录）
   const modelQueryCache = { at: 0, sessionId: null, value: null }
 
-  // 查询会话当前选中的模型（composer 里选的，实时反映模型切换）；
-  // 查询失败（子代理/冷会话/服务不可用）时回退最近一次主调用模型
+  // 模型目录缓存（TTL 60s）：provider 广告的模型列表变化很慢，避免每次打开弹层都重建。
+  // 缓存值形如 { groups, defaultModel }：groups 供未配价列表用，defaultModel 供当前模型兜底。
+  // 内联自 @deepseek-ai/dsh-api-session-controller 的 buildModelCatalog(ctx)（packages/api/
+  // session-controller/src/catalog.ts）。不 import 内部模块：该包 exports 里只有 "./src/*"
+  // 而没有 "./lib/*"，打包产物只发 lib/，跨包 import 会随上游重构而断——所以只依赖两个服务的
+  // 公开方法（llm.listProviders / listModels / resolveModelInfo，agentDefaultModel.currentSelection）。
+  const catalogCache = { at: 0, groups: null, defaultModel: null }
+
+  async function loadModelCatalog() {
+    const now = Date.now()
+    if (catalogCache.groups && now - catalogCache.at < 60000) return catalogCache
+
+    let defaultModel = null
+    try {
+      const sel = ctx.agentDefaultModel && ctx.agentDefaultModel.currentSelection()
+      defaultModel = (sel && sel.model) || null
+    } catch { /* 服务不可用，保持 null */ }
+
+    let groups = []
+    try {
+      const providers = ctx.llm.listProviders()
+      const built = await Promise.all(providers.map(async (provider) => {
+        try {
+          const models = await ctx.llm.listModels(provider.id)
+          return {
+            id: provider.id,
+            name: provider.name,
+            models: (models || []).map((m) => ({ id: m.id, name: m.name || m.id })),
+          }
+        } catch { return null }
+      }))
+      groups = built.filter((g) => g && g.models.length > 0)
+    } catch { groups = [] }
+
+    catalogCache.groups = groups
+    catalogCache.defaultModel = defaultModel
+    catalogCache.at = now
+    return catalogCache
+  }
+
+  // 查询会话当前使用的模型。0.1.6 的 session/modelCatalog 是无参的部署级目录
+  // （buildModelCatalog(ctx) 用的就是 agentDefaultModel.currentSelection()），
+  // 不再有「按 sessionId 查当前选中模型」的 RPC；因此这里取部署默认模型，
+  // 失败或未选时回退最近一次主调用实际使用的模型（llm/stream 里记录）。
   async function currentModelOf(sessionId) {
     const now = Date.now()
     if (modelQueryCache.sessionId === sessionId && now - modelQueryCache.at < 1500) return modelQueryCache.value
     let value = null
     try {
-      const r = await ctx.apiProxy.sessions.models({ rpcId: 'quota-model-' + now, payload: { sessionId } })
-      const res = r && r.result
-      value = (res && res.ok && res.value && res.value.current && res.value.current.model) || null
+      const catalog = await loadModelCatalog()
+      value = catalog.defaultModel || null
     } catch { /* 查询失败，走兜底 */ }
     if (!value) value = lastModel
     modelQueryCache.sessionId = sessionId
@@ -253,21 +313,11 @@ export function apply(ctx) {
     return value
   }
 
-  // 模型目录缓存（TTL 60s）：provider 广告的模型列表变化很慢，避免每次打开弹层都重建
-  const catalogCache = { at: 0, groups: null }
-
   async function modelCatalogGroups(sessionId) {
-    const now = Date.now()
-    if (catalogCache.groups && now - catalogCache.at < 60000) return catalogCache.groups
-    let groups = []
     try {
-      const r = await ctx.apiProxy.sessions.models({ rpcId: 'quota-catalog-' + now, payload: { sessionId } })
-      const res = r && r.result
-      groups = (res && res.ok && res.value && res.value.groups) || []
-    } catch { groups = [] }
-    catalogCache.groups = groups
-    catalogCache.at = now
-    return groups
+      const catalog = await loadModelCatalog()
+      return catalog.groups || []
+    } catch { return [] }
   }
 
   // 目录中未配价的模型（排除已配价/已忽略/Plan），按 provider 分组
@@ -319,44 +369,51 @@ export function apply(ctx) {
     return cur
   }
 
-  // 子代理归并：subagent/start（global 监听，拿 runId + 子会话 id）记录
-  // 子代理归并：subagent/start（global 监听）记录子会话 id；tools/result
-  // （父会话作用域，exec.agent=父）取最早未归并的子会话，建立 child->parent
-  // 映射并把子会话运行中已记的消耗合并进父（事后补归 + 后续实时归并）
-  const pendingChildren = [] // FIFO：subagent/start 记录的子会话 id（按创建顺序）
-  ctx.on('subagent/start', (info) => {
-    if (info && info.id) pendingChildren.push(String(info.id))
-  }, { global: true })
-
-  // global: true —— tools/result 是作用域事件（carrier=执行工具的会话），
-  // 不带 global 的全局监听会被 context filter 过滤掉，收不到
-  ctx.on('tools/result', async (exec) => {
-    if (!exec || !exec.agent || !exec.agent.session) return
-    if (!/^subagent/.test(String(exec.name || ''))) return
-    const parentId = String(exec.agent.session.id)
-    // 匹配最早一个尚未归并的子代理（subagent/start 先于 tools/result 触发）
-    const childId = pendingChildren.length > 0 ? pendingChildren.shift() : ''
-    if (!childId) return
+  // 子代理归属：权威关系在会话 header 里——dsh-subagent 创建子会话时写入
+  // parentSession + origin:'subagent'（+ delegationDepth），活着的 Agent 直接
+  // 暴露 agent.session.header；dsh-subagent 自己也这么读（authorizeLineage 用
+  // handle.agent.session.header.parentSession，listChildren 用
+  // record.header.origin === 'subagent' 过滤）。
+  //
+  // 为什么不用 subagent/start：它的回调只收到 info（runId/provider/id/local）——
+  // createLifecycleEmitter 把 parent 当作 scoped dispatch 的 carrier 用掉了
+  // （ctx.events.dispatch('emit', [carrier(parent), name, info]) 之后只
+  // callback(info)），第二个参数恒为 undefined。旧实现因此改用 tools/result +
+  // /^subagent/ 工具名 FIFO 配对：多 agent（AgentTeams）成员经 agent_teams_* 工具
+  // spawn，永远配不上，成员消耗留在成员自己的账本里（发起会话的额度条看不见），
+  // 成员会话销毁时账本文件还会被 session/disposed 删掉。
+  //
+  // fork 会话也带 parentSession（seed lineage），但 origin 不是 'subagent'——那是
+  // 用户自己开的新对话，不能并账；过滤条件与官方 listChildren 保持一致。
+  function adoptFromAgent(agent) {
+    const session = agent && agent.session
+    const header = session && session.header
+    if (!session || !header || header.origin !== 'subagent' || !header.parentSession) return
+    const childId = String(session.id)
+    const parentId = String(header.parentSession)
+    if (childId === parentId || parentMap.has(childId)) return
     try {
-      if (parentMap.has(childId)) return
       parentMap.set(childId, parentId)
-      // 合并子会话运行中已独立记的消耗到父
-      const childLedger = ledgers.get(childId)
-      if (childLedger && childLedger.spent > 0) {
-        const parentLedger = ledgerOf(parentId)
-        parentLedger.spent += childLedger.spent
-        parentLedger.calls += childLedger.calls
-        if (parentLedger.quota !== null && parentLedger.spent >= parentLedger.quota) parentLedger.exhausted = true
+      // 记账目标是根会话（与 llm/stream 的 rootSessionId 口径一致）
+      const rootId = rootSessionId(parentId)
+      const rootLedger = ledgerOf(rootId)
+      // 补归：该子会话此前（旧版本遗留 / 上一个 epoch）已独立记下的消耗
+      const childLedger = ledgerOf(childId)
+      if (childLedger.spent > 0 || childLedger.calls > 0) {
+        rootLedger.spent += childLedger.spent
+        rootLedger.calls += childLedger.calls
         childLedger.spent = 0
         childLedger.calls = 0
-        persistLedger(parentId, parentLedger)
       }
-      persistLedger(childId, { quota: null, spent: 0, calls: 0 })
-      console.log('[quota] subagent merged child=' + childId + ' -> parent=' + parentId)
+      if (rootLedger.quota !== null && rootLedger.spent >= rootLedger.quota) rootLedger.exhausted = true
+      persistLedger(rootId, rootLedger)
+      // 子账本清零并落盘 parentId：重启后 ledgerOf 凭它恢复这张映射表
+      persistLedger(childId, childLedger)
+      console.log('[quota] subagent merged child=' + childId + ' -> root=' + rootId)
     } catch (err) {
       console.warn('[quota] subagent merge failed: ' + err.message)
     }
-  })
+  }
 
   // 价目表：内置默认 + 用户文件覆盖
   const pricesPath = ctx.dshHomePath('storages', 'quota-meter', 'prices.json')
@@ -542,16 +599,24 @@ export function apply(ctx) {
   })
 
   // 额度耗尽：拦截新的模型调用（ledgerOf：重启后从磁盘恢复额度状态）
+  // 同一步先认领子会话：agent/pre-step 由 agent loop 对每个 agent（含子代理）的
+  // 每一步派发，payload.agent 就是那个 Agent，且必然早于该步的模型调用——子会话
+  // 第一次花钱之前映射一定已经建立（冷恢复/重启后的成员也在这一步补上）。
+  // global: true —— agent/pre-step 是作用域事件（routing subject = agent，
+  // dsh-scope 的 scoped-events 表把 agent/pre-step 映射到 args[0].agent），
+  // 不带 global 的 host 平面监听会被 context filter 过滤掉，子代理的步进收不到
+  // （与当初 tools/result 需要 global 是同一个原因）。
   ctx.on('agent/pre-step', async (payload, next) => {
     const session = payload.agent && payload.agent.session
     if (session === undefined) return next()
+    adoptFromAgent(payload.agent)
     const ledger = ledgerOf(session.id)
     if (ledger !== undefined && ledger.quota !== null && ledger.exhausted) {
       console.log('[quota] session=' + session.id + ' step rejected (quota exhausted)')
       return { kind: 'reject' }
     }
     return next()
-  })
+  }, { global: true })
 
   // 会话关闭：清理记账本（内存 + 磁盘文件 + 子代理映射，与对话记录生命周期一致）
   ctx.on('session/disposed', (session) => {

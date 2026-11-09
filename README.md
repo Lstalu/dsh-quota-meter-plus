@@ -39,7 +39,7 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus
 Locked version — 锁版本安装（推荐正式环境）：
 
 ```bash
-dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.2
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.5.0
 ```
 
 - **Client**（进度条/弹层 UI）→ 刷新浏览器即生效
@@ -51,37 +51,44 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.4.2
 
 > **升级注意（已有安装者）**：默认价目表随版本更新，但本机 `prices.json`（如已存在）会覆盖默认值。
 > 升级到含新价格的版本后，需在价格弹层点「重置」或删除 `~/.dsh/storages/quota-meter/prices.json`
-> 才会用到最新默认价（含新模型 `deepseek-v4-flash-vision-exp`）。
+> 才会用到最新默认价。
 
 ## 💰 Pricing / 计价
 
 价目表动态可编辑（UI 入口：额度条行尾「价格」），持久化到 `~/.dsh/storages/quota-meter/prices.json`。
-单位 ¥/每 1M tokens。计价基准：**官方 2026-08-21 页面为美元价**，此处按当日
-人民币兑美元中间价 **6.78** 折算（off-peak = 美元价 × 6.78 取 2 位，peak = off-peak × 2）。
-汇率与价格均可在 UI 修改。
+单位 ¥/每 1M tokens。计价基准：**官方 2026-09-11 中文页直接给人民币价**，不再做汇率折算
+（旧版按 2026-08-21 美元价 × 6.78 折算出的数字已全部替换）。价格仍可在 UI 修改。
 
-> ✅ **官方核对（2026-08-21）**：价格点与
+> ✅ **官方核对（2026-09-11）**：价格与
 > [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)
-> 一致（flash/vision 未命中 $0.22、输出 $0.66、命中 $0.007；pro 约 3×）。
-> 高峰时段为 UTC 01:00–04:00、06:00–10:00 = 北京 09:00–12:00、14:00–18:00，
-> 空闲 = 高峰半价；**新规（2026-08-23 起）周六、周日全天按空闲价计费**。
+> 逐项一致。高峰时段为北京 09:00–12:00、14:00–18:00（周一至周五），
+> 空闲 = 高峰半价，**周六、周日全天按空闲价计费**。
 > 官方 usage 仅报告 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，
 > 无独立的缓存写入计费字段（硬盘缓存构建成本并入未命中价），
 > 故 `cacheWriteTokens` 对 DeepSeek 恒为 0，`inputWrite` 档仅影响其他厂商。
 
-### deepseek-v4-flash · deepseek-v4-flash-vision-exp
+> ⚠️ **模型名迁移（2026-09-10 生效）**：`deepseek-v4.1-flash-expires-on-0910` 已失效
+> （服务端 400：*no longer supported since 2026-09-10*），正式名为 **`deepseek-flash`**。
+> 旧名 `deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 仍可调用，
+> 但请求由 V4.1-Flash 提供服务并按 Flash 价计费——**三者必须同价**，否则账目会漂。
+
+### deepseek-flash · deepseek-v4-flash · deepseek-v4-flash-vision-exp
 
 | | 缓存命中 | 缓存未命中 | 输出 |
 |---|---|---|---|
-| 空闲时段（含周末） | ¥0.05 | ¥1.49 | ¥4.47 |
-| 高峰时段 | ¥0.10 | ¥2.98 | ¥8.94 |
+| 空闲时段（含周末） | ¥0.02 | ¥1 | ¥4 |
+| 高峰时段 | ¥0.04 | ¥2 | ¥8 |
 
 ### deepseek-v4-pro
 
 | | 缓存命中 | 缓存未命中 | 输出 |
 |---|---|---|---|
-| 空闲时段（含周末） | ¥0.15 | ¥4.47 | ¥13.42 |
-| 高峰时段 | ¥0.30 | ¥8.94 | ¥26.84 |
+| 空闲时段（含周末） | ¥0.15 | ¥4.5 | ¥13.5 |
+| 高峰时段 | ¥0.30 | ¥9 | ¥27 |
+
+> 📌 V4 Pro 下线计划：北京时间 2026-09-14 12:00 之后至 V4.1 Pro 上线前，
+> `deepseek-v4-pro` 的请求全部路由到 V4.1 Flash 并按 Flash 价计费；
+> 届时若账目需要精确，应把该条切到 Flash 价或直接用 `deepseek-flash`。
 
 - **Weekend off-peak / 周末全天空闲**：周六、周日（北京时间）全天按空闲价计费（官方 2026-08-23 起执行）
 - **Peak hours / 高峰时段**：北京时间 9:00–12:00、14:00–18:00（每个峰谷模型可自定义时区与区间）
@@ -109,7 +116,7 @@ dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
 
 ## 🔧 增强补丁（相对上游 d9941af）
 
-本仓库为增强维护版，基于官方 d9941af 基线，在官方基础上打了四处补丁（均可提交上游）：
+本仓库为增强维护版，基于官方 d9941af 基线，在官方基础上打了五处补丁（均可提交上游）：
 
 1. **同源防护（安全）**：`/quota/*` 是本地写接口（改额度 / 改价目表），
    浏览器里任意外部网页都能向 `127.0.0.1` 发跨源请求。host 端新增
@@ -141,6 +148,30 @@ dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
    `/quota/config` 收到空的 `apiKey` 时视为"保留现有 Key"，不再覆盖、不再
    清除——避免在胶囊 `⚙` 弹层误点「保存」把密钥清掉。只有填入非空 Key 才会
    更新；如需清除，用弹层新增的「清除密钥」按钮（带确认）显式清空。
+
+5. **子代理 / 多 agent 归属改用权威 header（计费归属修复）**：权威父子关系在
+    会话 header 里——`dsh-subagent` 创建子会话时写入 `parentSession` +
+    `origin:'subagent'`（+ `delegationDepth`），活着的 Agent 直接暴露
+    `agent.session.header`（`dsh-subagent` 自己的 `authorizeLineage` 就这么读）。
+    host 端在 `agent/pre-step`（agent loop 对每个 agent 的每一步派发，早于该步的
+    模型调用）按 `header.origin === 'subagent'` 认领子会话、建立 child → 根父映射，
+    并**删除**旧的 `tools/result` + `/^subagent/` 工具名 FIFO 配对。
+    - 为什么不是 `subagent/start`：它的回调只收到 `info`（runId/provider/id/local）
+      ——`parent` 被 `createLifecycleEmitter` 当作 scoped dispatch 的 carrier 用掉了
+      （`ctx.events.dispatch('emit', [carrier(parent), name, info])` 之后只
+      `callback(info)`），第二个参数恒为 `undefined`。
+    - 为什么旧写法漏掉多 agent：它只认 `subagent` 工具名，而 AgentTeams 成员经
+      `agent_teams_*` spawn，永远等不到匹配的 `tools/result`，映射建不起来 →
+      成员消耗留在成员自己的账本里（发起会话的额度条看不到），成员会话销毁时
+      账本文件又被 `session/disposed` 删除。
+    - 为什么不并 fork：fork 会话也带 `parentSession`（seed lineage），但
+      `origin` 不是 `'subagent'` —— 那是用户自己开的新对话，不能并账；过滤条件
+      与官方 `listChildren` 保持一致。
+    - 认领子会话时会把其此前（旧版本遗留 / 上一个 epoch）已独立记的消耗补归
+      根父并清零子账本（重启后凭子账本里的 `parentId` 恢复映射）。
+    - 实测一次国赛多 agent 会话：发起会话只显示 ¥13.38，整棵代理树实际 ¥55.04
+      （其中今天 ¥47.90，与官方日账单口径一致）。
+    - 回归测试：`node test/subagent-attribution.test.mjs`。
 
 ## 📄 License / 许可
 
