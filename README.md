@@ -1,4 +1,4 @@
-# Quota Meter · 会话额度监控
+# dsh-quota-meter-plus · 会话额度监控
 
 > **Per-session spend & quota meter for [DSH](https://github.com/deepseek-harness) — real token billing, live progress bar, budget blocking, configurable multi-model pricing.**
 >
@@ -26,7 +26,7 @@
 - **Configurable pricing** — 价目表 UI 可编辑、按模型持久化；支持峰谷（time-of-day）定价，每个模型可自定义时区与高峰时段
 - **Weekend off-peak** — 官方新规（2026-08-23 起）周六/周日全天按空闲价计费，自动识别并切换档位
 - **Per-session scope** — 记账按会话独立；**子代理消耗自动并入父会话额度**（沿代理链上溯到根父），额度条显示真实总花费；辅助调用（标题生成/上下文压缩）同样计费
-- **Persistent ledger** — 额度与已花金额跟随会话持久化（`~/.dsh/storages/quota-meter/sessions/`），重启 dsh 不丢；会话关闭时自动清理，与对话记录生命周期一致
+- **Persistent ledger** — 额度与已花金额跟随会话持久化（`~/.dsh/storages/dsh-quota-meter-plus/sessions/`），重启 dsh 不丢；会话关闭时自动清理，与对话记录生命周期一致
 
 ## 📦 Install / 安装
 
@@ -39,23 +39,23 @@ dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus
 Locked version — 锁版本安装（推荐正式环境）：
 
 ```bash
-dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.5.0
+dsh plugin --profile web add github:Lstalu/dsh-quota-meter-plus#v0.5.1
 ```
 
 - **Client**（进度条/弹层 UI）→ 刷新浏览器即生效
 - **Host**（记账/拦截/接口）→ 重启 dsh web 进程生效
-- **Uninstall / 卸载**：`dsh plugin --profile web remove quota-meter`
+- **Uninstall / 卸载**：`dsh plugin --profile web remove dsh-quota-meter-plus`
 
 > Local development — 本地开发用 checkout 链接（改动即时反映）：
-> `dsh plugin --profile web add /path/to/quota-meter-plugin`
+> `dsh plugin --profile web add /path/to/dsh-quota-meter-plus`
 
 > **升级注意（已有安装者）**：默认价目表随版本更新，但本机 `prices.json`（如已存在）会覆盖默认值。
-> 升级到含新价格的版本后，需在价格弹层点「重置」或删除 `~/.dsh/storages/quota-meter/prices.json`
+> 升级到含新价格的版本后，需在价格弹层点「重置」或删除 `~/.dsh/storages/dsh-quota-meter-plus/prices.json`
 > 才会用到最新默认价。
 
 ## 💰 Pricing / 计价
 
-价目表动态可编辑（UI 入口：额度条行尾「价格」），持久化到 `~/.dsh/storages/quota-meter/prices.json`。
+价目表动态可编辑（UI 入口：额度条行尾「价格」），持久化到 `~/.dsh/storages/dsh-quota-meter-plus/prices.json`。
 单位 ¥/每 1M tokens。计价基准：**官方 2026-09-11 中文页直接给人民币价**，不再做汇率折算
 （旧版按 2026-08-21 美元价 × 6.78 折算出的数字已全部替换）。价格仍可在 UI 修改。
 
@@ -139,7 +139,7 @@ dsh plugin --profile web add ./dsh-quota-meter-plus   # 本地链接安装
      拉取自动记录基线；`实测消耗 = 基线 − 当前余额`（账户级口径），
      供与插件会话记账对照校准。
    - API Key 经胶囊 `⚙` 弹层保存，落盘
-     `~/.dsh/storages/quota-meter/config.json`（0600，仅本机），
+     `~/.dsh/storages/dsh-quota-meter-plus/config.json`（0600，仅本机），
      或设环境变量 `DSH_DEEPSEEK_API_KEY` / `DEEPSEEK_API_KEY`；
      密钥只发往 api.deepseek.com，接口绝不回显。`重设基线` 按钮可在
      充值后重新锚定参考点。

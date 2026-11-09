@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# dsh-quota-meter · 一键安装（官方 bundle 版）
+# dsh-quota-meter-plus · 一键安装（官方 bundle 版）
 #
 # 封装 `dsh plugin add .`：把本 checkout 作为 bundle 安装进指定 profile。
 # 等价于在仓库内手动执行：dsh plugin --profile <name> add .
@@ -24,7 +24,7 @@ if ! command -v "$DSH_CMD" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> 安装 quota-meter bundle → profile: $PROFILE"
+echo "==> 安装 dsh-quota-meter-plus bundle → profile: $PROFILE"
 (cd "$REPO" && "$DSH_CMD" plugin --profile "$PROFILE" add .)
 
 echo

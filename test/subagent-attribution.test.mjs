@@ -29,11 +29,11 @@ function check(name, actual, expected) {
 // 每个用例一个临时 DSH home（账本落盘路径由 dshHomePath 决定）
 function makeHome() {
   const home = mkdtempSync(join(tmpdir(), 'quota-attrib-'))
-  mkdirSync(join(home, 'storages', 'quota-meter', 'sessions'), { recursive: true })
+  mkdirSync(join(home, 'storages', 'dsh-quota-meter-plus', 'sessions'), { recursive: true })
   return home
 }
 
-const ledgerPath = (home, id) => join(home, 'storages', 'quota-meter', 'sessions', id + '.json')
+const ledgerPath = (home, id) => join(home, 'storages', 'dsh-quota-meter-plus', 'sessions', id + '.json')
 const readLedger = (home, id) => {
   const p = ledgerPath(home, id)
   return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null

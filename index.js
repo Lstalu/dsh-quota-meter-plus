@@ -4,7 +4,7 @@
 //   - per-token     恒定价（多数厂商）：prices = { inputMiss, inputHit, output }
 //   - per-token-tod 按 token + 分时段（DeepSeek 峰谷）：prices = { default, peak? }
 // 旧 v1 结构（无 pricing）加载时自动归一化为 per-token。
-// 持久化：~/.dsh/storages/quota-meter/prices.json
+// 持久化：~/.dsh/storages/dsh-quota-meter-plus/prices.json
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -71,7 +71,7 @@ const DEFAULT_PRICES = {
   },
 }
 
-export const name = 'quota-meter'
+export const name = 'dsh-quota-meter-plus'
 // 0.1.6-alpha.1：apiProxy 服务随 @deepseek-ai/dsh-host-apiproxy 一起被移除。
 // 模型目录改为直接消费两个宿主本地服务（与 dsh-api-session-controller 的
 // buildModelCatalog 所用的是同一对）：
@@ -238,7 +238,7 @@ function entryPrices(entry) {
 
 export function apply(ctx) {
   // 每会话记账本：{ quota, spent, calls, exhausted }——跟随会话持久化：
-  // 惰性从磁盘恢复（~/.dsh/storages/quota-meter/sessions/<id>.json），
+  // 惰性从磁盘恢复（~/.dsh/storages/dsh-quota-meter-plus/sessions/<id>.json），
   // 变更即写，会话销毁时删除（与对话记录生命周期一致）
   const ledgers = new Map()
   // 子代理会话 → 根父会话 映射：subagent/start 建立，持久化到子会话文件；
@@ -339,7 +339,7 @@ export function apply(ctx) {
     return out
   }
 
-  const sessionsDir = ctx.dshHomePath('storages', 'quota-meter', 'sessions')
+  const sessionsDir = ctx.dshHomePath('storages', 'dsh-quota-meter-plus', 'sessions')
   const safeId = (id) => String(id).replace(/[^a-zA-Z0-9._-]/g, '_')
   const sessionPath = (id) => join(sessionsDir, safeId(id) + '.json')
 
@@ -416,7 +416,7 @@ export function apply(ctx) {
   }
 
   // 价目表：内置默认 + 用户文件覆盖
-  const pricesPath = ctx.dshHomePath('storages', 'quota-meter', 'prices.json')
+  const pricesPath = ctx.dshHomePath('storages', 'dsh-quota-meter-plus', 'prices.json')
   let prices = DEFAULT_PRICES
   try {
     if (existsSync(pricesPath)) {
@@ -432,7 +432,7 @@ export function apply(ctx) {
   // 用途：定期拉取 DeepSeek 平台真实余额，与插件的会话记账对照校准。
   // 密钥解析顺序：config 文件（用户经 UI 保存）> 环境变量；只用于向
   // api.deepseek.com 发送 HTTPS 请求，绝不回传给客户端 UI。
-  const configPath = ctx.dshHomePath('storages', 'quota-meter', 'config.json')
+  const configPath = ctx.dshHomePath('storages', 'dsh-quota-meter-plus', 'config.json')
   let configCache = null
   function loadConfig() {
     if (configCache) return configCache
